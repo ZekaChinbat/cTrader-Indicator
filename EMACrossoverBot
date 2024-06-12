@@ -1,0 +1,91 @@
+using cAlgo.API;
+using cAlgo.API.Indicators;
+using cAlgo.API.Internals;
+using System;
+
+namespace cAlgo.Robots
+{
+    [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
+    public class EMACrossoverBot : Robot
+    {
+        [Parameter("EMA-1", DefaultValue = 20)]
+        public int FastEmaPeriod { get; set; }
+
+        [Parameter("EMA-2", DefaultValue = 200)]
+        public int SlowEmaPeriod { get; set; }
+
+        [Parameter("Volume", DefaultValue = 1000)]
+        public int Volume { get; set; }
+
+        [Parameter("Stop Loss (pips)", DefaultValue = 30, MinValue = 10)]
+        public int InitialStopLoss { get; set; }
+
+        [Parameter("Take Profit (pips)", DefaultValue = 60, MinValue = 10)]
+        public int TakeProfit { get; set; }
+
+        [Parameter("Trailing SL (pips)", DefaultValue = 60, MinValue = 10)]
+        public int TrailingStopLoss { get; set; }
+
+        private ExponentialMovingAverage _fastEma;
+        private ExponentialMovingAverage _slowEma;
+
+        protected override void OnStart()
+        {
+            // EMAs
+            _fastEma = Indicators.ExponentialMovingAverage(Bars.ClosePrices, FastEmaPeriod);
+            _slowEma = Indicators.ExponentialMovingAverage(Bars.ClosePrices, SlowEmaPeriod);
+        }
+
+        protected override void OnTick()
+        {
+            // Trailing stop loss
+            foreach (var position in Positions)
+            {
+                if (position.Label == "BuySignal" && Symbol.Bid - position.EntryPrice > TrailingStopLoss * Symbol.PipSize)
+                {
+                    ModifyPosition(position, position.EntryPrice + TrailingStopLoss * Symbol.PipSize, position.TakeProfit);
+                }
+                else if (position.Label == "SellSignal" && position.EntryPrice - Symbol.Ask > TrailingStopLoss * Symbol.PipSize)
+                {
+                    ModifyPosition(position, position.EntryPrice - TrailingStopLoss * Symbol.PipSize, position.TakeProfit);
+                }
+            }
+        }
+
+        protected override void OnBar()
+        {
+            // Open positions shalgah
+            if (Positions.Count > 0)
+                return;
+
+            // Last index
+            int lastIndex = Bars.ClosePrices.Count - 1;
+
+            // Trend todorhoiloh
+            bool isUptrend = _fastEma.Result[lastIndex] > _slowEma.Result[lastIndex];
+            bool isDowntrend = _fastEma.Result[lastIndex] < _slowEma.Result[lastIndex];
+
+            double price = Bars.ClosePrices[lastIndex];
+            double fastEmaValue = _fastEma.Result[lastIndex];
+            double upperThreshold = fastEmaValue + 10 * Symbol.PipSize;
+            double lowerThreshold = fastEmaValue - 10 * Symbol.PipSize;
+
+            // Buy signal
+            if (isUptrend && price <= lowerThreshold && price >= lowerThreshold - 5 * Symbol.PipSize)
+            {
+                ExecuteMarketOrder(TradeType.Buy, SymbolName, Volume, "BuySignal", InitialStopLoss, TakeProfit);
+            }
+
+            // Sell signal
+            if (isDowntrend && price >= upperThreshold && price <= upperThreshold + 5 * Symbol.PipSize)
+            {
+                ExecuteMarketOrder(TradeType.Sell, SymbolName, Volume, "SellSignal", InitialStopLoss, TakeProfit);
+            }
+        }
+
+        protected override void OnStop()
+        {
+            // cBot
+        }
+    }
+}
